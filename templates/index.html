@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Scorecard Generator - Home</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>Scorecard Creator</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
   <style>
     body {
       padding-top: 70px;
@@ -19,7 +19,7 @@
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Generator</a>
+      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Creator</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent"
               aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
          <span class="navbar-toggler-icon"></span>
@@ -58,13 +58,13 @@
 
     <div class="row">
       {% for tpl in templates %}
-        <div class="col-md-4 col-sm-6 mb-4">
+        <div class="col-xl-3 col-md-4 col-sm-6 mb-4">
           <div class="card template-card h-100">
             <div class="card-body">
               <h5 class="card-title">{{ tpl.template }}</h5>
               <p class="card-text">Sport: {{ tpl.sport }}</p>
             </div>
-            <div class="card-footer d-flex justify-content-between">
+            <div class="card-footer d-flex flex-wrap gap-2">
               <a href="{{ url_for('mapping', sport=tpl.sport, template_name=tpl.template) }}" class="btn btn-sm btn-secondary">Edit Mapping</a>
               <a href="{{ url_for('preview', sport=tpl.sport, template_name=tpl.template) }}" class="btn btn-sm btn-info">Preview</a>
               <a href="{{ url_for('generate', sport=tpl.sport, template_name=tpl.template) }}" class="btn btn-sm btn-success">Generate</a>
@@ -78,6 +78,37 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
+
+  {% if update_info %}
+  <div class="modal fade" id="updateModal" tabindex="-1" aria-labelledby="updateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header bg-warning">
+          <h5 class="modal-title" id="updateModalLabel">Update Available &mdash; v{{ update_info.version }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>A new version of Scorecard Creator is available. You are currently running <strong>v{{ APP_VERSION }}</strong>.</p>
+          {% if update_info.notes %}
+          <p>{{ update_info.notes }}</p>
+          {% endif %}
+          <p>Download and run the new installer to update.</p>
+        </div>
+        <div class="modal-footer">
+          {% if update_info.download_url %}
+          <a href="{{ update_info.download_url }}" target="_blank" class="btn btn-primary">Download Installer</a>
+          {% endif %}
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Dismiss</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    window.addEventListener('load', function () {
+      new bootstrap.Modal(document.getElementById('updateModal')).show();
+    });
+  </script>
+  {% endif %}
 </body>
 </html>

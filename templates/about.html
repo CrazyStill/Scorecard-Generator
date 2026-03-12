@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>About This Site - Scorecard Generator</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>About - Scorecard Creator</title>
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
   <style>
     body { padding-top: 70px; }
     h2 { margin-top: 2rem; }
@@ -12,7 +12,7 @@
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Generator</a>
+      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Creator</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent"
               aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
          <span class="navbar-toggler-icon"></span>
@@ -33,153 +33,139 @@
     </div>
   </nav>
 
-  <!-- Page Content -->
   <div class="container mt-4">
-    <h1 class="mb-4">About This Site - Scorecard Creator</h1>
-    
+    <h1 class="mb-4">About Scorecard Creator</h1>
+
     <h2>Overview</h2>
     <p>
-      Scorecard Creator is a web application designed to help you quickly generate professional scorecards.
-      Using this site, you can upload your own templates and data to produce final, print-ready PDFs.
-      This detailed guide will walk you through each step, explain the underlying technology, and answer common questions.
+      Scorecard Creator is a desktop application for generating print-ready scorecard PDFs for various sporting events.
+      Upload your Word template and a CSV data file, configure the field mapping once, and generate a complete PDF batch whenever you need it.
+      Everything runs locally on this PC — no internet connection required.
     </p>
-    
+
     <h2>How It Works</h2>
     <ol>
       <li>
-         <strong>Upload a New Template:</strong>
-         <ul>
-           <li>Navigate to the "Upload New Template" page. You will be prompted to enter a sport name and a unique template name.</li>
-           <li>Upload your Word template (front) in .docx format. This document should include placeholders that will be replaced with actual data.
-             <br><em>Tip:</em> Use a consistent naming convention such as <code>1TEAM, 2TEAM.</code>, etc. Ensure you do not use _N (n for any number) at the end for different fields.</li>
-           <li>Upload a CSV file which serves as a data template. This file should contain column headers for your data.</li>
-           <li>Optionally, you can upload a static back design (in PDF format) that will be merged with the front scorecard.</li>
-         </ul>
+        <strong>Upload a New Template:</strong>
+        <ul>
+          <li>Click <em>Upload Template</em> and enter a sport name and template name.</li>
+          <li>Upload your Word template (.docx) with placeholders for the data fields (e.g. <code>TEAMNAME</code>, <code>DATEHERE</code>).
+            <br><em>Tip:</em> Use a consistent naming convention and avoid using <code>_N</code> (underscore + number) suffixes in your field names — those are reserved for multi-card positioning.</li>
+          <li>Upload a CSV file that defines the column headers for your data.</li>
+          <li>Optionally upload a static back design (PDF) to be merged onto the reverse of every scorecard page.</li>
+        </ul>
       </li>
       <li>
-         <strong>Mapping CSV Headers to Placeholders:</strong>
-         <ul>
-           <li>After uploading your files, you will be directed to a mapping page.</li>
-           <li>Here, the system extracts the headers from your CSV file and asks you to map each header to the corresponding placeholder in your Word template.</li>
-           <li>You will also specify how many scorecards should be printed on each page (for example, 1–4, primarily used for soccer).</li>
-           <li>Ensure your Word template uses placeholders with an underscore and a number suffix for pages with multiple scorecards (e.g., <code>TeamName_1</code>, and <code>TeamName_2</code> would be two different scorecards).</li>
-         </ul>
+        <strong>Map CSV Headers to Placeholders:</strong>
+        <ul>
+          <li>After uploading, the mapping screen opens automatically.</li>
+          <li>For each CSV column header, enter the matching placeholder text from your Word template.</li>
+          <li>Set how many scorecards are printed per page (1–4). For multi-card pages, the program appends <code>_1</code>, <code>_2</code>, etc. to each placeholder automatically (e.g. <code>TEAMNAME_1</code>, <code>TEAMNAME_2</code>).</li>
+          <li>Click <em>Save Mapping</em>. This only needs to be done once per template.</li>
+        </ul>
       </li>
       <li>
-         <strong>Generating Scorecards:</strong>
-         <ul>
-           <li>On the "Generate Scorecard" page, download the CSV template provided and fill in your data using your preferred spreadsheet program.</li>
-           <li>Upload the filled CSV file using the form on the page.</li>
-           <li>The system processes your data, replacing the placeholders in your Word template with the actual data,
-             converting the document to PDF, and merging pages as needed.</li>
-           <li>Once processing is complete, your final PDF scorecard is generated and downloaded.</li>
-         </ul>
+        <strong>Generating Scorecards:</strong>
+        <ul>
+          <li>On the Generate screen, click <em>Download CSV Template</em> to get a blank CSV with the correct headers.</li>
+          <li>Fill in your match data in Excel or any spreadsheet program and save the file.</li>
+          <li>Upload the completed CSV and click <em>Generate Scorecard PDF</em>.</li>
+          <li>The program replaces all placeholders with your data, converts each page to PDF, and merges them into a single file.</li>
+          <li>When complete, the finished PDF is saved to your <strong>Downloads</strong> folder and you are returned to the home screen.</li>
+        </ul>
       </li>
       <li>
-         <strong>File Storage and Processing:</strong>
-         <ul>
-           <li>All uploaded files are stored in a dedicated folder structure under <code>SCTEMP/(SPORT)/(TEMPLATENAME)/</code>.</li>
-           <li>During PDF generation, temporary files are created in a temporary working directory that is purged after processing.</li>
-           <li>The conversion from DOCX to PDF is handled primarily by <code>docx2pdf</code>, with a fallback to COM automation if needed.</li>
-           <li>The final PDF is assembled using <code>PyPDF2</code>.</li>
-         </ul>
+        <strong>File Storage:</strong>
+        <ul>
+          <li>Templates are stored in your Windows AppData folder (<code>%APPDATA%\ScorecardCreator\SCTEMP\</code>) and are preserved between updates.</li>
+          <li>Temporary files created during PDF generation are automatically cleaned up after each run.</li>
+        </ul>
       </li>
     </ol>
-    
-    <h2>Detailed Step-by-Step Guide</h2>
-    <h3>Step 1: Uploading a New Template</h3>
+
+    <h2>Step-by-Step Guide</h2>
+    <h3>Step 1: Upload a New Template</h3>
     <p>
-      On the "Upload New Template" page:
+      On the Upload Template screen:
       <ul>
-        <li>Enter the sport name (e.g., Soccer, Basketball) and a unique template name.</li>
-        <li>Select your Word document template. Make sure it contains the placeholders in the required format.</li>
-        <li>Select your CSV file template. This file should have column headers corresponding to the data you plan to provide later.</li>
-        <li>If desired, select a PDF file for a static back design.</li>
-        <li>Click "Upload Template." The files will be stored securely in the designated folder.</li>
+        <li>Enter the sport name (e.g. Soccer, Basketball) and a unique template name.</li>
+        <li>Select your Word document (.docx). Make sure it contains the correct placeholder text.</li>
+        <li>Select your CSV template file — this should have column headers matching your data fields.</li>
+        <li>If you have a static back design, select the PDF and choose <em>Yes</em> for the back design option.</li>
+        <li>Click <em>Upload Template</em> to save and proceed to mapping.</li>
       </ul>
     </p>
-    
-    <h3>Step 2: Mapping CSV Headers</h3>
+
+    <h3>Step 2: Configure the Mapping</h3>
     <p>
-      On the mapping page:
+      On the mapping screen:
       <ul>
-        <li>The system reads the CSV file’s headers and displays them on the page.</li>
-        <li>For each header, enter the exact placeholder text as used in your Word template. If you want multiple scorecards per page, ensure you append an underscore followed by the position number (e.g., <code>TeamName_1</code>, <code>TeamName_2</code>).</li>
-        <li>Specify how many scorecards will be printed on one page (typically between 1 and 4).</li>
-        <li>Click "Save Mapping" to store these settings.</li>
+        <li>For each CSV column header, type the exact placeholder text used in your Word template.</li>
+        <li>For multi-card pages, the program will automatically append <code>_1</code>, <code>_2</code>, etc. when filling in the template — do not add these suffixes yourself in the mapping.</li>
+        <li>Set the number of scorecards per page (typically 1 for basketball, 4 for soccer).</li>
+        <li>Click <em>Save Mapping</em>.</li>
       </ul>
     </p>
-    
-    <h3>Step 3: Generating Scorecards</h3>
+
+    <h3>Step 3: Generate Scorecards</h3>
     <p>
-      On the "Generate Scorecard" page:
+      On the Generate screen:
       <ul>
-        <li>Download the CSV template provided on the page.</li>
-        <li>Open the CSV file in a spreadsheet application (e.g., Microsoft Excel), fill in your data, and save the file.</li>
-        <li>Upload the completed CSV file using the upload form on the page.</li>
-        <li>The system will process your data by:
-          <ul>
-            <li>Reading your data in groups (based on the number of scorecards per page).</li>
-            <li>Replacing the placeholders in your Word template with the actual data.</li>
-            <li>Converting the Word document to PDF.</li>
-            <li>Merging multiple pages (if necessary) into a single PDF.</li>
-          </ul>
-        </li>
-        <li>Once the download starts, you will be redirected to the main page.</li>
+        <li>Click <em>Download CSV Template</em> to get a blank file with the correct headers.</li>
+        <li>Open the file in Microsoft Excel, fill in your match data row by row, and save it.</li>
+        <li>Upload the completed CSV and click <em>Generate Scorecard PDF</em>.</li>
+        <li>The program will process all rows and save the finished PDF to your Downloads folder.</li>
       </ul>
     </p>
-    
-    <h3>Step 4: Deleting Templates</h3>
+
+    <h3>Step 4: Deleting a Template</h3>
     <p>
-      If you need to remove an old template:
       <ul>
-        <li>Go back to the main page.</li>
-        <li>Click the "Delete" button next to the template you want to remove. This will remove the entire template directory and all associated files.</li>
+        <li>From the home screen, click <em>Delete</em> on any template card to permanently remove it and all its associated files.</li>
       </ul>
     </p>
-    
+
     <h2>Technical Details</h2>
     <p>
-      The system is built with Flask and uses the following key libraries:
+      Scorecard Creator runs entirely on your PC and uses the following components:
       <ul>
-        <li><strong>docx2pdf</strong>: Converts DOCX files to PDF. If this fails, the system uses COM automation with pywin32 as a fallback.</li>
-        <li><strong>PyPDF2</strong>: Merges intermediate PDF files to create the final scorecard PDF.</li>
-        <li><strong>Bootstrap 5</strong>: Provides the front-end styling and responsiveness.</li>
+        <li><strong>Microsoft Word</strong>: Required for DOCX-to-PDF conversion via COM automation.</li>
+        <li><strong>docx2pdf / pywin32</strong>: Drives the Word conversion process in the background.</li>
+        <li><strong>PyPDF2</strong>: Merges the individual page PDFs into the final output file.</li>
+        <li><strong>python-docx</strong>: Reads and fills in the Word template placeholders.</li>
       </ul>
     </p>
-    
-    <h2>Frequently Asked Questions (FAQ)</h2>
+
+    <h2>Frequently Asked Questions</h2>
     <p>
-      <strong>Q: Do I need any special software on my computer?</strong><br>
-      A: No, all processing is performed on the server. Your computer just needs a web browser.
+      <strong>Q: Do I need an internet connection?</strong><br>
+      A: No. Scorecard Creator runs entirely offline on this PC.
+    </p>
+    <p>
+      <strong>Q: Do I need Microsoft Word installed?</strong><br>
+      A: Yes. Word is required to convert the filled DOCX template to PDF. The program will not be able to generate scorecards without it.
     </p>
     <p>
       <strong>Q: What file formats are supported?</strong><br>
-      A: The Word template must be in .docx format. CSV files are used for data input, and optionally you can upload a PDF for the back design.
+      A: Word templates must be in <code>.docx</code> format. Data files must be <code>.csv</code>. The optional back design must be a <code>.pdf</code>.
+    </p>
+    <p>
+      <strong>Q: Where are my generated PDFs saved?</strong><br>
+      A: All generated PDFs, as well as downloaded CSV templates and DOCX files, are saved to your <strong>Downloads</strong> folder.
     </p>
     <p>
       <strong>Q: How do I format placeholders in my Word template?</strong><br>
-      A: Use clear, unique placeholder text. For multiple scorecards on one page, append an underscore and the scorecard number (e.g., <code>TeamName_1, TeamName_2</code>).
+      A: Use clear, unique text (e.g. <code>TEAMNAME</code>, <code>DATEHERE</code>). For multi-card pages, the program automatically handles the <code>_1</code>, <code>_2</code> suffixes — do not add them to the template placeholders.
     </p>
-    
-    <h2>Future Enhancements</h2>
+
+    <h2>Contact &amp; Support</h2>
     <p>
-      Planned future improvements include:
-      <ul>
-        <li>User authentication and session management.</li>
-        <li>Real-time progress updates during scorecard generation.</li>
-        <li>Enhanced template editing and customization options.</li>
-        <li>More detailed logging and error reporting.</li>
-      </ul>
-    </p>
-    
-    <h2>Contact & Support</h2>
-    <p>
-      If you have any questions or need support, please contact me at 
-      <a href="mailto:aselzer@cityofcape.org">aselzer@cityofcape.org</a>. I welcome feedback and suggestions!
+      This application was mostly vibe coded to solve an immediate need, but has slowly evloved into something a little more robust and shareable. 
+      For questions or support, contact
+      <a href="mailto:aselzer@cityofcape.org">aselzer@cityofcape.org</a>.
     </p>
   </div>
-  
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
 </body>
 </html>

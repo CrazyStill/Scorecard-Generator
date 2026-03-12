@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Upload New Scorecard Template</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
   <style>
     body { padding-top: 70px; }
   </style>
@@ -11,7 +11,7 @@
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Generator</a>
+      <a class="navbar-brand" href="{{ url_for('index') }}">Scorecard Creator</a>
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent"
               aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
          <span class="navbar-toggler-icon"></span>
@@ -33,7 +33,7 @@
   </nav>
   
   <div class="container mt-4">
-    <h1 class="mb-4">Upload New Scorecard Template</h1>
+    <h1 class="mb-4">Create New Scorecard Template</h1>
     {% with messages = get_flashed_messages() %}
       {% if messages %}
         <div class="alert alert-info">
@@ -75,7 +75,7 @@
     </form>
   </div>
   
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
   <script>
     document.querySelector('select[name="back_option"]').addEventListener('change', function(){
       document.getElementById('back_upload').style.display = this.value === 'yes' ? 'block' : 'none';

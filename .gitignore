@@ -1,3 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller build outputs
+build/
+dist/
+
+# Inno Setup output
+installer/output/
+installer/app_icon.ico
+
+# Dev/legacy files
 test.py
 old-main.py
-/__pycache__/

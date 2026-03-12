@@ -1,4 +1,4 @@
-import os, csv, json, shutil, tempfile
+import os, sys, csv, json, shutil, tempfile, threading, urllib.request
 from flask import (
     Flask, render_template, request,
     redirect, url_for, flash,
@@ -14,17 +14,101 @@ from generate import (
 )
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'  
-BASE_DIR   = os.path.abspath(os.path.dirname(__file__))
-SCTEMP_DIR = os.path.join(BASE_DIR, 'SCTEMP')
-if not os.path.exists(SCTEMP_DIR):
-    os.makedirs(SCTEMP_DIR)
+app.secret_key = 'your_secret_key'
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+# ── Update check ──────────────────────────────────────────────────────────────
+APP_VERSION = "1.0.0"
+# Replace this URL with your GitHub Gist raw URL after creating it (see README)
+UPDATE_CHECK_URL = "https://gist.github.com/CrazyStill/4bfa488d53a8322ccaad43bff389f876"
+
+_update_info = None   # None = still checking | False = up to date | dict = update available
+
+
+def _parse_version(v):
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except Exception:
+        return (0, 0, 0)
+
+
+def _fetch_update_info():
+    global _update_info
+    try:
+        with urllib.request.urlopen(UPDATE_CHECK_URL, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        if _parse_version(data.get("version", "0")) > _parse_version(APP_VERSION):
+            _update_info = data
+        else:
+            _update_info = False
+    except Exception:
+        _update_info = False
+
+
+threading.Thread(target=_fetch_update_info, daemon=True).start()
+
+
+@app.context_processor
+def inject_globals():
+    return {'APP_VERSION': APP_VERSION}
+
+
+def get_sctemp_dir():
+    """Return AppData/Roaming/ScorecardCreator/SCTEMP when running as .exe,
+    fall back to the local SCTEMP/ folder during development."""
+    if getattr(sys, 'frozen', False):
+        appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+        base = os.path.join(appdata, 'ScorecardCreator')
+    else:
+        base = BASE_DIR
+    sctemp = os.path.join(base, 'SCTEMP')
+    os.makedirs(sctemp, exist_ok=True)
+    return sctemp
+
+
+SCTEMP_DIR = get_sctemp_dir()
+
+
+def migrate_existing_templates():
+    """On first run as packaged app, copy any bundled SCTEMP data into AppData
+    if the AppData SCTEMP folder is empty."""
+    if not getattr(sys, 'frozen', False):
+        return
+    install_dir = os.path.dirname(sys.executable)
+    bundled_sctemp = os.path.join(install_dir, 'SCTEMP')
+    if os.path.exists(bundled_sctemp) and not os.listdir(SCTEMP_DIR):
+        for item in os.listdir(bundled_sctemp):
+            src = os.path.join(bundled_sctemp, item)
+            dst = os.path.join(SCTEMP_DIR, item)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+
+
+migrate_existing_templates()
+
+
+def get_downloads_dir():
+    """Return the user's Downloads folder path."""
+    return os.path.join(os.path.expanduser('~'), 'Downloads')
+
+
+def save_to_downloads(src_path, filename):
+    """Copy a file to the user's Downloads folder. Returns the destination path."""
+    downloads = get_downloads_dir()
+    os.makedirs(downloads, exist_ok=True)
+    dst = os.path.join(downloads, filename)
+    shutil.copy2(src_path, dst)
+    return dst
+
 
 def allowed_file(filename, allowed_extensions):
     return (
         '.' in filename
         and filename.rsplit('.', 1)[1].lower() in allowed_extensions
     )
+
 
 @app.route('/')
 def index():
@@ -39,7 +123,9 @@ def index():
                         'sport': sport,
                         'template': template_name
                     })
-    return render_template('index.html', templates=templates_list)
+    update_info = _update_info if isinstance(_update_info, dict) else None
+    return render_template('index.html', templates=templates_list, update_info=update_info)
+
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
@@ -67,7 +153,6 @@ def upload():
             return redirect(request.url)
         csv_file.save(os.path.join(template_dir, 'template_data.csv'))
 
-
         if request.form.get('back_option') == 'yes':
             back_file = request.files.get('back_file')
             if back_file and allowed_file(back_file.filename, {'pdf'}):
@@ -84,6 +169,7 @@ def upload():
 
     return render_template('upload.html')
 
+
 @app.route('/mapping/<sport>/<template_name>', methods=['GET','POST'])
 def mapping(sport, template_name):
     template_dir = os.path.join(
@@ -97,7 +183,6 @@ def mapping(sport, template_name):
     if not os.path.exists(csv_path):
         flash("CSV file not found for this template.")
         return redirect(url_for('index'))
-
 
     existing_cards_per_page = 4
     existing_mapping = {}
@@ -114,7 +199,10 @@ def mapping(sport, template_name):
 
         with open(csv_path, newline='', encoding='latin-1') as f:
             sample = f.read(1024); f.seek(0)
-            dialect = csv.Sniffer().sniff(sample)
+            try:
+                dialect = csv.Sniffer().sniff(sample)
+            except csv.Error:
+                dialect = csv.excel
             reader = csv.reader(f, dialect=dialect)
             headers = next(reader)
 
@@ -142,7 +230,10 @@ def mapping(sport, template_name):
 
     with open(csv_path, newline='', encoding='latin-1') as f:
         sample = f.read(1024); f.seek(0)
-        dialect = csv.Sniffer().sniff(sample)
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except csv.Error:
+            dialect = csv.excel
         reader = csv.reader(f, dialect=dialect)
         headers = next(reader)
 
@@ -160,6 +251,7 @@ def mapping(sport, template_name):
         existing_cards_per_page=existing_cards_per_page,
         existing_mapping=existing_mapping
     )
+
 
 @app.route('/preview_pdf/<sport>/<template_name>')
 def preview_pdf(sport, template_name):
@@ -200,6 +292,7 @@ def preview_pdf(sport, template_name):
         as_attachment=False
     )
 
+
 @app.route('/preview/<sport>/<template_name>', methods=['GET','POST'])
 def preview(sport, template_name):
     template_dir = os.path.join(
@@ -220,6 +313,7 @@ def preview(sport, template_name):
 
     return render_template('preview.html', sport=sport, template_name=template_name)
 
+
 @app.route('/download_template/<sport>/<template_name>')
 def download_template(sport, template_name):
     template_dir = os.path.join(
@@ -232,7 +326,11 @@ def download_template(sport, template_name):
         flash("DOCX template not found.")
         return redirect(url_for('index'))
 
-    return send_file(docx_path, as_attachment=True)
+    filename = f"{template_name}_template.docx"
+    saved_path = save_to_downloads(docx_path, filename)
+    flash(f"Template saved to Downloads: {filename}")
+    return redirect(url_for('preview', sport=sport, template_name=template_name))
+
 
 @app.route('/generate/<sport>/<template_name>', methods=['GET','POST'])
 def generate(sport, template_name):
@@ -268,17 +366,14 @@ def generate(sport, template_name):
                 temp_dir=temp_dir
             )
 
-            pdf_bytes = open(output_pdf, 'rb').read()
-            resp = make_response(send_file(
-                BytesIO(pdf_bytes),
-                download_name=os.path.basename(output_pdf),
-                mimetype='application/pdf',
-                as_attachment=True
-            ))
-            resp.set_cookie("fileDownload", "true", max_age=60)
-            return resp
+            filename = f"{template_name}_Scorecards.pdf"
+            saved_path = save_to_downloads(output_pdf, filename)
+
+        flash(f"Scorecards saved to Downloads folder: {filename}")
+        return redirect(url_for('index'))
 
     return render_template('generate.html', sport=sport, template_name=template_name)
+
 
 @app.route('/download_csv/<sport>/<template_name>')
 def download_csv(sport, template_name):
@@ -293,7 +388,11 @@ def download_csv(sport, template_name):
         flash("CSV template not found.")
         return redirect(url_for('index'))
 
-    return send_file(csv_template_path, as_attachment=True)
+    filename = f"{template_name}_template.csv"
+    save_to_downloads(csv_template_path, filename)
+    flash(f"CSV template saved to Downloads: {filename}")
+    return redirect(url_for('generate', sport=sport, template_name=template_name))
+
 
 @app.route('/delete/<sport>/<template_name>', methods=['POST'])
 def delete_template(sport, template_name):
@@ -309,9 +408,11 @@ def delete_template(sport, template_name):
         flash("Template not found.")
     return redirect(url_for('index'))
 
+
 @app.route('/about')
 def about():
     return render_template('about.html')
 
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)

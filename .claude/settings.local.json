@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip show pywebview)",
+      "Bash(pip show flaskwebgui)",
+      "Bash(pip install pywebview)",
+      "Bash(python -c \"import webview; help\\(webview.start\\)\")",
+      "Bash(python -c \"import webview; help\\(webview.create_window\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(grep -n \"navbar-brand\" \"C:/Users/andre/Dropbox/City of Cape/Scorecards/Scorecard Creator PROGRAM/templates/\"*.html)"
+    ]
+  }
+}

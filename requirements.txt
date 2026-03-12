@@ -1,0 +1,8 @@
+flask
+werkzeug
+python-docx
+docx2pdf
+PyPDF2
+comtypes
+pywin32
+pywebview>=6.1

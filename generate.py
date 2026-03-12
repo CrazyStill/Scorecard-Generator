@@ -45,10 +45,10 @@ def merge_two_pdfs(pdf1, pdf2, merged_pdf):
     merger.close()
 
 def convert_docx_to_pdf(docx_path, pdf_path):
+    pythoncom.CoInitialize()
     try:
         docx2pdf.convert(docx_path, pdf_path)
     except Exception:
-        pythoncom.CoInitialize()
         wdFormatPDF = 17
         word = comtypes.client.CreateObject("Word.Application")
         word.Visible = False
@@ -58,7 +58,8 @@ def convert_docx_to_pdf(docx_path, pdf_path):
         finally:
             doc.Close()
             word.Quit()
-            pythoncom.CoUninitialize()
+    finally:
+        pythoncom.CoUninitialize()
 
 def generate_scorecard(template_path, csv_path, mapping,
                        cards_per_page=4, back_pdf_path=None, temp_dir=None):
