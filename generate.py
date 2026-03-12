@@ -62,14 +62,23 @@ def convert_docx_to_pdf(docx_path, pdf_path):
         pythoncom.CoUninitialize()
 
 def generate_scorecard(template_path, csv_path, mapping,
-                       cards_per_page=4, back_pdf_path=None, temp_dir=None):
+                       cards_per_page=4, back_pdf_path=None, temp_dir=None,
+                       progress_callback=None):
     final_pdf_list = []
     with open(csv_path, newline='', encoding='latin-1') as f:
         sample = f.read(1024)
         f.seek(0)
-        dialect = csv.Sniffer().sniff(sample)
+        try:
+            dialect = csv.Sniffer().sniff(sample)
+        except csv.Error:
+            dialect = csv.excel
         reader = csv.DictReader(f, dialect=dialect)
         rows = [row for row in reader if any(value.strip() for value in row.values())]
+
+    if not rows:
+        raise ValueError("The CSV file contains no data rows. Please fill in the template and try again.")
+
+    total_pages = len(range(0, len(rows), cards_per_page))
 
     for i in range(0, len(rows), cards_per_page):
         group = rows[i : i + cards_per_page]
@@ -92,6 +101,9 @@ def generate_scorecard(template_path, csv_path, mapping,
         final_pdf_list.append(page_pdf)
         os.remove(temp_front_docx)
         os.remove(temp_front_pdf)
+
+        if progress_callback:
+            progress_callback(idx + 1, total_pages, f"Converting page {idx + 1} of {total_pages}…")
 
     output_pdf = os.path.join(temp_dir, "Final_Scorecards.pdf")
     merger = PdfMerger()

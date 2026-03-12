@@ -1,8 +1,8 @@
-import os, sys, csv, json, shutil, tempfile, threading, urllib.request
+import os, sys, csv, json, shutil, tempfile, threading, queue, urllib.request
 from flask import (
     Flask, render_template, request,
     redirect, url_for, flash,
-    send_file, make_response
+    send_file, make_response, Response, stream_with_context
 )
 from werkzeug.utils import secure_filename
 from io import BytesIO
@@ -20,7 +20,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 # ── Update check ──────────────────────────────────────────────────────────────
 APP_VERSION = "1.0.0"
 # Replace this URL with your GitHub Gist raw URL after creating it (see README)
-UPDATE_CHECK_URL = "https://gist.github.com/CrazyStill/4bfa488d53a8322ccaad43bff389f876"
+UPDATE_CHECK_URL = "https://gist.githubusercontent.com/CrazyStill/4bfa488d53a8322ccaad43bff389f876/raw/version.json"
 
 _update_info = None   # None = still checking | False = up to date | dict = update available
 
@@ -90,8 +90,17 @@ migrate_existing_templates()
 
 
 def get_downloads_dir():
-    """Return the user's Downloads folder path."""
-    return os.path.join(os.path.expanduser('~'), 'Downloads')
+    """Return the user's Downloads folder path via the Windows registry.
+    Falls back to ~/Downloads if the registry key is unavailable."""
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+        ) as key:
+            return winreg.QueryValueEx(key, '{374DE290-123F-4565-9164-39C4925E467B}')[0]
+    except Exception:
+        return os.path.join(os.path.expanduser('~'), 'Downloads')
 
 
 def save_to_downloads(src_path, filename):
@@ -99,7 +108,7 @@ def save_to_downloads(src_path, filename):
     downloads = get_downloads_dir()
     os.makedirs(downloads, exist_ok=True)
     dst = os.path.join(downloads, filename)
-    shutil.copy2(src_path, dst)
+    shutil.copy(src_path, dst)
     return dst
 
 
@@ -133,7 +142,7 @@ def upload():
         sport         = request.form.get('sport')
         template_name = request.form.get('template_name')
         if not sport or not template_name:
-            flash("Sport and Template Name are required.")
+            flash("Sport and Template Name are required.", "danger")
             return redirect(request.url)
 
         sport          = secure_filename(sport)
@@ -143,13 +152,13 @@ def upload():
 
         front_file = request.files.get('front_file')
         if not front_file or not allowed_file(front_file.filename, {'docx'}):
-            flash("A valid Word template file (.docx) is required.")
+            flash("A valid Word template file (.docx) is required.", "danger")
             return redirect(request.url)
         front_file.save(os.path.join(template_dir, 'template_front.docx'))
 
         csv_file = request.files.get('csv_file')
         if not csv_file or not allowed_file(csv_file.filename, {'csv'}):
-            flash("A valid CSV file is required.")
+            flash("A valid CSV file is required.", "danger")
             return redirect(request.url)
         csv_file.save(os.path.join(template_dir, 'template_data.csv'))
 
@@ -158,7 +167,7 @@ def upload():
             if back_file and allowed_file(back_file.filename, {'pdf'}):
                 back_file.save(os.path.join(template_dir, 'template_back.pdf'))
             else:
-                flash("Back design selected but no valid PDF uploaded.")
+                flash("Back design selected but no valid PDF uploaded.", "danger")
                 return redirect(request.url)
 
         return redirect(url_for(
@@ -181,13 +190,14 @@ def mapping(sport, template_name):
     mapping_file = os.path.join(template_dir, 'mapping.json')
 
     if not os.path.exists(csv_path):
-        flash("CSV file not found for this template.")
+        flash("CSV file not found for this template.", "danger")
         return redirect(url_for('index'))
 
     existing_cards_per_page = 4
     existing_mapping = {}
     if os.path.exists(mapping_file):
-        data = json.load(open(mapping_file))
+        with open(mapping_file) as f:
+            data = json.load(f)
         existing_cards_per_page = data.get("cards_per_page", 4)
         existing_mapping = data.get("mapping", {})
 
@@ -195,7 +205,7 @@ def mapping(sport, template_name):
         new_csv = request.files.get('new_csv')
         if new_csv and allowed_file(new_csv.filename, {'csv'}):
             new_csv.save(csv_path)
-            flash("CSV file updated successfully.")
+            flash("CSV file updated successfully.", "success")
 
         with open(csv_path, newline='', encoding='latin-1') as f:
             sample = f.read(1024); f.seek(0)
@@ -207,7 +217,7 @@ def mapping(sport, template_name):
             headers = next(reader)
 
         try:
-            cards_per_page = int(request.form.get('cards_per_page', 4))
+            cards_per_page = max(1, min(4, int(request.form.get('cards_per_page', 4))))
         except ValueError:
             cards_per_page = 4
 
@@ -221,7 +231,7 @@ def mapping(sport, template_name):
                 "mapping": new_mapping
             }, f)
 
-        flash("Mapping saved successfully.")
+        flash("Mapping saved successfully.", "success")
         return redirect(url_for(
             'mapping',
             sport=sport,
@@ -262,7 +272,7 @@ def preview_pdf(sport, template_name):
     )
     front_docx    = os.path.join(template_dir, 'template_front.docx')
     if not os.path.exists(front_docx):
-        flash("DOCX template not found.")
+        flash("DOCX template not found.", "danger")
         return redirect(url_for('index'))
 
     temp_dir       = tempfile.mkdtemp()
@@ -306,9 +316,9 @@ def preview(sport, template_name):
         new_docx = request.files.get('new_docx')
         if new_docx and allowed_file(new_docx.filename, {'docx'}):
             new_docx.save(docx_path)
-            flash("Template updated successfully.")
+            flash("Template updated successfully.", "success")
             return redirect(url_for('preview', sport=sport, template_name=template_name))
-        flash("Please upload a valid DOCX file.")
+        flash("Please upload a valid DOCX file.", "danger")
         return redirect(url_for('preview', sport=sport, template_name=template_name))
 
     return render_template('preview.html', sport=sport, template_name=template_name)
@@ -323,12 +333,15 @@ def download_template(sport, template_name):
     )
     docx_path    = os.path.join(template_dir, 'template_front.docx')
     if not os.path.exists(docx_path):
-        flash("DOCX template not found.")
+        flash("DOCX template not found.", "danger")
         return redirect(url_for('index'))
 
     filename = f"{template_name}_template.docx"
-    saved_path = save_to_downloads(docx_path, filename)
-    flash(f"Template saved to Downloads: {filename}")
+    try:
+        saved_path = save_to_downloads(docx_path, filename)
+        flash(f"Saved to: {saved_path}", "success")
+    except Exception as e:
+        flash(f"Could not save file: {e}", "danger")
     return redirect(url_for('preview', sport=sport, template_name=template_name))
 
 
@@ -346,31 +359,65 @@ def generate(sport, template_name):
     if request.method == 'POST':
         filled_csv_file = request.files.get('filled_csv')
         if not filled_csv_file or not allowed_file(filled_csv_file.filename, {'csv'}):
-            flash("Please upload a valid CSV file.")
-            return redirect(request.url)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            filled_csv_path = os.path.join(temp_dir, 'filled_data.csv')
-            filled_csv_file.save(filled_csv_path)
-
-            mapping_json = json.load(open(mapping_file))
-            cards_per_page = mapping_json.get("cards_per_page", 4)
-            mapping_data   = mapping_json.get("mapping", {})
-
-            output_pdf = generate_scorecard(
-                front_path,
-                filled_csv_path,
-                mapping_data,
-                cards_per_page=cards_per_page,
-                back_pdf_path=back_path if os.path.exists(back_path) else None,
-                temp_dir=temp_dir
+            return Response(
+                'data: ' + json.dumps({'error': 'Please upload a valid CSV file.'}) + '\n\n',
+                mimetype='text/event-stream'
             )
 
-            filename = f"{template_name}_Scorecards.pdf"
-            saved_path = save_to_downloads(output_pdf, filename)
+        # Save uploaded file before streaming starts so it persists in the background thread
+        tmp_dir = tempfile.mkdtemp()
+        filled_csv_path = os.path.join(tmp_dir, 'filled_data.csv')
+        filled_csv_file.save(filled_csv_path)
 
-        flash(f"Scorecards saved to Downloads folder: {filename}")
-        return redirect(url_for('index'))
+        with open(mapping_file) as f:
+            mapping_json = json.load(f)
+        cards_per_page = max(1, min(4, int(mapping_json.get('cards_per_page', 4))))
+        mapping_data   = mapping_json.get('mapping', {})
+
+        progress_q = queue.Queue()
+
+        def run_generation():
+            try:
+                def cb(step, total, msg):
+                    progress_q.put(('progress', step, total, msg))
+
+                output_pdf = generate_scorecard(
+                    front_path,
+                    filled_csv_path,
+                    mapping_data,
+                    cards_per_page=cards_per_page,
+                    back_pdf_path=back_path if os.path.exists(back_path) else None,
+                    temp_dir=tmp_dir,
+                    progress_callback=cb,
+                )
+                progress_q.put(('progress', None, None, 'Saving to Downloads…'))
+                filename = f'{template_name}_Scorecards.pdf'
+                saved_path = save_to_downloads(output_pdf, filename)
+                progress_q.put(('done', saved_path))
+            except ValueError as e:
+                progress_q.put(('error', str(e)))
+            except Exception as e:
+                progress_q.put(('error', f'Generation failed: {e}'))
+            finally:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        threading.Thread(target=run_generation, daemon=True).start()
+
+        def stream():
+            while True:
+                item = progress_q.get()
+                if item[0] == 'progress':
+                    yield 'data: ' + json.dumps({
+                        'step': item[1], 'total': item[2], 'msg': item[3]
+                    }) + '\n\n'
+                elif item[0] == 'done':
+                    yield 'data: ' + json.dumps({'done': True, 'path': item[1]}) + '\n\n'
+                    break
+                elif item[0] == 'error':
+                    yield 'data: ' + json.dumps({'error': item[1]}) + '\n\n'
+                    break
+
+        return Response(stream_with_context(stream()), mimetype='text/event-stream')
 
     return render_template('generate.html', sport=sport, template_name=template_name)
 
@@ -385,12 +432,15 @@ def download_csv(sport, template_name):
     csv_template_path = os.path.join(template_dir, 'template_data.csv')
 
     if not os.path.exists(csv_template_path):
-        flash("CSV template not found.")
+        flash("CSV template not found.", "danger")
         return redirect(url_for('index'))
 
     filename = f"{template_name}_template.csv"
-    save_to_downloads(csv_template_path, filename)
-    flash(f"CSV template saved to Downloads: {filename}")
+    try:
+        saved_path = save_to_downloads(csv_template_path, filename)
+        flash(f"Saved to: {saved_path}", "success")
+    except Exception as e:
+        flash(f"Could not save file: {e}", "danger")
     return redirect(url_for('generate', sport=sport, template_name=template_name))
 
 
@@ -403,9 +453,9 @@ def delete_template(sport, template_name):
     )
     if os.path.exists(template_dir):
         shutil.rmtree(template_dir)
-        flash("Template deleted successfully.")
+        flash("Template deleted successfully.", "success")
     else:
-        flash("Template not found.")
+        flash("Template not found.", "danger")
     return redirect(url_for('index'))
 
 

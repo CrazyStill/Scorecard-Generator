@@ -6,7 +6,6 @@
   <link href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}" rel="stylesheet">
   <style>
     body { padding-top: 70px; }
-    #spinner-container { display: none; }
   </style>
 </head>
 <body>
@@ -20,7 +19,7 @@
       <div class="collapse navbar-collapse" id="navbarContent">
          <ul class="navbar-nav ms-auto">
            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+              <a class="nav-link active" aria-current="page" href="{{ url_for('index') }}">Home</a>
            </li>
            <li class="nav-item">
               <a class="nav-link" href="{{ url_for('upload') }}">Upload Template</a>
@@ -40,18 +39,19 @@
       <a href="{{ url_for('download_csv', sport=sport, template_name=template_name) }}" class="btn btn-secondary">Download CSV Template</a>
     </p>
 
-    {% with messages = get_flashed_messages() %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div class="alert alert-info">
-          {% for message in messages %}
-            <div>{{ message }}</div>
-          {% endfor %}
-        </div>
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'info' if category == 'message' else category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
       {% endif %}
     {% endwith %}
 
     <div id="form-container">
-      <form id="generate-form" method="post" enctype="multipart/form-data" onsubmit="showSpinner()">
+      <form id="generate-form" method="post" enctype="multipart/form-data">
         <div class="mb-3">
           <label for="filled_csv" class="form-label">Upload Filled CSV File:</label>
           <input type="file" class="form-control" name="filled_csv" id="filled_csv" accept=".csv" required>
@@ -60,19 +60,93 @@
       </form>
     </div>
 
-    <div id="spinner-container" class="text-center mt-4">
-      <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Generating...</span>
+    <!-- Progress UI (shown during generation) -->
+    <div id="progress-container" style="display:none">
+      <p id="progress-msg" class="mb-2">Starting…</p>
+      <div class="progress mb-3" style="height: 28px;">
+        <div id="progress-bar"
+             class="progress-bar progress-bar-striped progress-bar-animated"
+             role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
       </div>
-      <p class="mt-3">Generating scorecards, please wait...</p>
-      <p class="mt-2">The PDF will be saved to your Downloads folder when complete.</p>
+      <p class="text-muted small">The PDF will be saved to your Downloads folder when complete.</p>
     </div>
+
+    <!-- Result message (shown on success or error) -->
+    <div id="result-container" style="display:none"></div>
   </div>
 
   <script>
-    function showSpinner() {
-      document.getElementById("form-container").style.display = "none";
-      document.getElementById("spinner-container").style.display = "block";
+    document.getElementById('generate-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+
+      // Hide form, show progress bar
+      document.getElementById('form-container').style.display = 'none';
+      document.getElementById('progress-container').style.display = 'block';
+
+      const formData = new FormData(this);
+      let response;
+      try {
+        response = await fetch(this.action, { method: 'POST', body: formData });
+      } catch (err) {
+        showResult('danger', 'Network error: ' + err.message);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE events are separated by double newlines
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop(); // keep any incomplete trailing chunk
+        for (const part of parts) {
+          if (!part.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(part.slice(6)); } catch { continue; }
+
+          if (data.step !== undefined && data.step !== null && data.total) {
+            // Real page progress — scale to 0–95% so the bar doesn't hit 100 before "done"
+            const pct = Math.round((data.step / data.total) * 95);
+            setProgress(pct, data.msg);
+          } else if (data.msg) {
+            // Intermediate status message with no step count (e.g. "Saving to Downloads…")
+            setProgress(98, data.msg);
+          } else if (data.done) {
+            setProgress(100, 'Done!');
+            setTimeout(function () {
+              showResult('success',
+                '<strong>&#10003; Scorecards saved to your Downloads folder.</strong>' +
+                '<br><span class="text-muted small"><code>' + data.path + '</code></span>' +
+                '<br><br><a href="/" class="btn btn-primary mt-2">Back to Home</a>'
+              );
+            }, 400);
+          } else if (data.error) {
+            showResult('danger',
+              data.error +
+              '<br><br><button class="btn btn-secondary mt-2" onclick="location.reload()">Try Again</button>'
+            );
+          }
+        }
+      }
+    });
+
+    function setProgress(pct, msg) {
+      const bar = document.getElementById('progress-bar');
+      bar.style.width = pct + '%';
+      bar.setAttribute('aria-valuenow', pct);
+      bar.textContent = pct + '%';
+      document.getElementById('progress-msg').textContent = msg;
+    }
+
+    function showResult(type, html) {
+      document.getElementById('progress-container').style.display = 'none';
+      const el = document.getElementById('result-container');
+      el.innerHTML = '<div class="alert alert-' + type + '">' + html + '</div>';
+      el.style.display = 'block';
     }
   </script>
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
