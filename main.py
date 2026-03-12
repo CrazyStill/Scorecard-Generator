@@ -17,15 +17,22 @@ app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# ── Update check ──────────────────────────────────────────────────────────────
+
+# ── Auto-update check ─────────────────────────────────────────────────────────
+# On startup a background thread fetches version.json from the GitHub Gist.
+# If the remote version is newer than APP_VERSION the index page shows a modal.
+
 APP_VERSION = "1.0.0"
-# Replace this URL with your GitHub Gist raw URL after creating it (see README)
-UPDATE_CHECK_URL = "https://gist.githubusercontent.com/CrazyStill/4bfa488d53a8322ccaad43bff389f876/raw/version.json"
+UPDATE_CHECK_URL = (
+    "https://gist.githubusercontent.com/CrazyStill/"
+    "4bfa488d53a8322ccaad43bff389f876/raw/version.json"
+)
 
 _update_info = None   # None = still checking | False = up to date | dict = update available
 
 
 def _parse_version(v):
+    """Convert a version string like '1.2.3' to a comparable tuple."""
     try:
         return tuple(int(x) for x in str(v).split('.'))
     except Exception:
@@ -33,16 +40,17 @@ def _parse_version(v):
 
 
 def _fetch_update_info():
+    """Background thread: fetch version.json and populate _update_info."""
     global _update_info
     try:
         with urllib.request.urlopen(UPDATE_CHECK_URL, timeout=5) as resp:
             data = json.loads(resp.read().decode())
         if _parse_version(data.get("version", "0")) > _parse_version(APP_VERSION):
-            _update_info = data
+            _update_info = data       # dict with at least {"version": "x.y.z", "url": "..."}
         else:
-            _update_info = False
+            _update_info = False      # already up to date
     except Exception:
-        _update_info = False
+        _update_info = False          # network unavailable or Gist unreachable — fail silently
 
 
 threading.Thread(target=_fetch_update_info, daemon=True).start()
@@ -50,12 +58,18 @@ threading.Thread(target=_fetch_update_info, daemon=True).start()
 
 @app.context_processor
 def inject_globals():
+    """Make APP_VERSION available in every template without explicit passing."""
     return {'APP_VERSION': APP_VERSION}
 
 
+# ── Data directory ────────────────────────────────────────────────────────────
+
 def get_sctemp_dir():
-    """Return AppData/Roaming/ScorecardCreator/SCTEMP when running as .exe,
-    fall back to the local SCTEMP/ folder during development."""
+    """Return the path to the SCTEMP templates folder.
+
+    Packaged .exe:  %APPDATA%\\ScorecardCreator\\SCTEMP\\
+    Development:    <project root>\\SCTEMP\\
+    """
     if getattr(sys, 'frozen', False):
         appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
         base = os.path.join(appdata, 'ScorecardCreator')
@@ -70,8 +84,12 @@ SCTEMP_DIR = get_sctemp_dir()
 
 
 def migrate_existing_templates():
-    """On first run as packaged app, copy any bundled SCTEMP data into AppData
-    if the AppData SCTEMP folder is empty."""
+    """Copy bundled templates into AppData on the first run of a packaged build.
+
+    The installer bundles an SCTEMP folder next to the .exe. If AppData/SCTEMP
+    is empty we copy those defaults in so users have templates ready to go.
+    Runs only once — subsequent launches find AppData/SCTEMP non-empty.
+    """
     if not getattr(sys, 'frozen', False):
         return
     install_dir = os.path.dirname(sys.executable)
@@ -89,22 +107,35 @@ def migrate_existing_templates():
 migrate_existing_templates()
 
 
+# ── Downloads helpers ─────────────────────────────────────────────────────────
+
 def get_downloads_dir():
-    """Return the user's Downloads folder path via the Windows registry.
-    Falls back to ~/Downloads if the registry key is unavailable."""
+    """Return the user's Downloads folder path.
+
+    Reads the path from the Windows registry Shell Folders key so it works
+    correctly when the user has redirected Downloads to another drive or
+    OneDrive. Falls back to ~/Downloads if the registry lookup fails.
+    """
     try:
         import winreg
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
         ) as key:
+            # GUID {374DE290...} is the well-known Downloads folder identifier
             return winreg.QueryValueEx(key, '{374DE290-123F-4565-9164-39C4925E467B}')[0]
     except Exception:
         return os.path.join(os.path.expanduser('~'), 'Downloads')
 
 
 def save_to_downloads(src_path, filename):
-    """Copy a file to the user's Downloads folder. Returns the destination path."""
+    """Copy src_path into the Downloads folder as filename.
+
+    Uses shutil.copy (not copy2) so the destination gets the current
+    timestamp — files then sort to the top in a date-ordered Downloads view.
+
+    Returns the full destination path.
+    """
     downloads = get_downloads_dir()
     os.makedirs(downloads, exist_ok=True)
     dst = os.path.join(downloads, filename)
@@ -113,14 +144,18 @@ def save_to_downloads(src_path, filename):
 
 
 def allowed_file(filename, allowed_extensions):
+    """Return True if filename has one of the allowed extensions."""
     return (
         '.' in filename
         and filename.rsplit('.', 1)[1].lower() in allowed_extensions
     )
 
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+
 @app.route('/')
 def index():
+    """Home page: list all sport/template cards found in SCTEMP."""
     templates_list = []
     for sport in os.listdir(SCTEMP_DIR):
         sport_dir = os.path.join(SCTEMP_DIR, sport)
@@ -138,6 +173,7 @@ def index():
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
+    """Upload a new template: DOCX front, CSV data, and optional PDF back."""
     if request.method == 'POST':
         sport         = request.form.get('sport')
         template_name = request.form.get('template_name')
@@ -181,6 +217,7 @@ def upload():
 
 @app.route('/mapping/<sport>/<template_name>', methods=['GET','POST'])
 def mapping(sport, template_name):
+    """Configure the CSV-column → placeholder mapping for a template."""
     template_dir = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -193,6 +230,7 @@ def mapping(sport, template_name):
         flash("CSV file not found for this template.", "danger")
         return redirect(url_for('index'))
 
+    # Load any previously saved mapping so the form pre-fills on re-visit
     existing_cards_per_page = 4
     existing_mapping = {}
     if os.path.exists(mapping_file):
@@ -202,6 +240,7 @@ def mapping(sport, template_name):
         existing_mapping = data.get("mapping", {})
 
     if request.method == 'POST':
+        # Optional CSV replacement: user can swap the data file at any time
         new_csv = request.files.get('new_csv')
         if new_csv and allowed_file(new_csv.filename, {'csv'}):
             new_csv.save(csv_path)
@@ -265,6 +304,7 @@ def mapping(sport, template_name):
 
 @app.route('/preview_pdf/<sport>/<template_name>')
 def preview_pdf(sport, template_name):
+    """Convert the template DOCX to PDF and serve it inline for the preview embed."""
     template_dir  = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -285,12 +325,14 @@ def preview_pdf(sport, template_name):
 
     back_pdf = os.path.join(template_dir, 'template_back.pdf')
     if os.path.exists(back_pdf):
+        # Merge front + back so the preview shows both sides
         preview_pdf_path = os.path.join(temp_dir, "preview.pdf")
         merge_two_pdfs(temp_front_pdf, back_pdf, preview_pdf_path)
         pdf_to_send = preview_pdf_path
     else:
         pdf_to_send = temp_front_pdf
 
+    # Read into memory before cleaning up temp files
     with open(pdf_to_send, 'rb') as f:
         pdf_bytes = f.read()
     shutil.rmtree(temp_dir)
@@ -305,6 +347,7 @@ def preview_pdf(sport, template_name):
 
 @app.route('/preview/<sport>/<template_name>', methods=['GET','POST'])
 def preview(sport, template_name):
+    """Preview page for a template. POST replaces the DOCX with a new upload."""
     template_dir = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -326,6 +369,7 @@ def preview(sport, template_name):
 
 @app.route('/download_template/<sport>/<template_name>')
 def download_template(sport, template_name):
+    """Save the DOCX template to the user's Downloads folder."""
     template_dir = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -347,6 +391,18 @@ def download_template(sport, template_name):
 
 @app.route('/generate/<sport>/<template_name>', methods=['GET','POST'])
 def generate(sport, template_name):
+    """Generate scorecard PDFs from a filled CSV.
+
+    GET:  Render the generate page with upload form.
+    POST: Accept the CSV, run generation in a background thread, and stream
+          progress back to the browser as Server-Sent Events (SSE). The
+          frontend reads the stream and updates a Bootstrap progress bar.
+
+    SSE event format (newline-delimited JSON):
+        data: {"step": 2, "total": 5, "msg": "Converting page 2 of 5…"}
+        data: {"done": true, "path": "C:\\Users\\...\\Downloads\\...pdf"}
+        data: {"error": "Something went wrong"}
+    """
     template_dir  = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -359,12 +415,15 @@ def generate(sport, template_name):
     if request.method == 'POST':
         filled_csv_file = request.files.get('filled_csv')
         if not filled_csv_file or not allowed_file(filled_csv_file.filename, {'csv'}):
+            # Return an immediate SSE error event so the JS can display it
             return Response(
                 'data: ' + json.dumps({'error': 'Please upload a valid CSV file.'}) + '\n\n',
                 mimetype='text/event-stream'
             )
 
-        # Save uploaded file before streaming starts so it persists in the background thread
+        # Save the uploaded CSV before the streaming response starts — the file
+        # object is only valid during this request, but generation runs in a
+        # separate thread that outlives the upload handler.
         tmp_dir = tempfile.mkdtemp()
         filled_csv_path = os.path.join(tmp_dir, 'filled_data.csv')
         filled_csv_file.save(filled_csv_path)
@@ -374,9 +433,12 @@ def generate(sport, template_name):
         cards_per_page = max(1, min(4, int(mapping_json.get('cards_per_page', 4))))
         mapping_data   = mapping_json.get('mapping', {})
 
+        # Queue used to pass progress events from the generation thread back to
+        # the SSE streaming generator running on the main request thread.
         progress_q = queue.Queue()
 
         def run_generation():
+            """Background thread: run the full generation pipeline."""
             try:
                 def cb(step, total, msg):
                     progress_q.put(('progress', step, total, msg))
@@ -390,6 +452,7 @@ def generate(sport, template_name):
                     temp_dir=tmp_dir,
                     progress_callback=cb,
                 )
+                # Signal the save step before writing to Downloads
                 progress_q.put(('progress', None, None, 'Saving to Downloads…'))
                 filename = f'{template_name}_Scorecards.pdf'
                 saved_path = save_to_downloads(output_pdf, filename)
@@ -399,13 +462,15 @@ def generate(sport, template_name):
             except Exception as e:
                 progress_q.put(('error', f'Generation failed: {e}'))
             finally:
+                # Always clean up temp files regardless of success or failure
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
         threading.Thread(target=run_generation, daemon=True).start()
 
         def stream():
+            """Generator that yields SSE events until generation finishes."""
             while True:
-                item = progress_q.get()
+                item = progress_q.get()   # blocks until the thread posts something
                 if item[0] == 'progress':
                     yield 'data: ' + json.dumps({
                         'step': item[1], 'total': item[2], 'msg': item[3]
@@ -424,6 +489,7 @@ def generate(sport, template_name):
 
 @app.route('/download_csv/<sport>/<template_name>')
 def download_csv(sport, template_name):
+    """Save the blank CSV data template to the user's Downloads folder."""
     template_dir     = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
@@ -446,6 +512,7 @@ def download_csv(sport, template_name):
 
 @app.route('/delete/<sport>/<template_name>', methods=['POST'])
 def delete_template(sport, template_name):
+    """Permanently remove a sport/template folder from SCTEMP."""
     template_dir = os.path.join(
         SCTEMP_DIR,
         secure_filename(sport),
